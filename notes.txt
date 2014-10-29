@@ -1,0 +1,8 @@
+This is a good site that the user says that the Android
+has it's own BAUD Rate correction facility and it is
+automatic in the underlying layer of the Android's
+hardware.
+
+http://stackoverflow.com/questions/10897411/changing-baud-rate-on-bluetooth-spp-connection
+
+
