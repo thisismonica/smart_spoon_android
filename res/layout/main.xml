@@ -31,6 +31,10 @@
         android:transcriptMode="alwaysScroll"
         android:layout_weight="1"
     />
+    <Button android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="open 3D"
+        android:onClick="openSpoon3D" />
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
