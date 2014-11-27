@@ -1,8 +1,5 @@
 package com.example.android.BluetoothChat;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
@@ -13,8 +10,6 @@ import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.opengles.GL10;
 
 import android.app.Activity;
-import android.content.res.AssetManager;
-import android.content.res.AssetManager.AssetInputStream;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.view.MotionEvent;
@@ -26,13 +21,11 @@ import com.threed.jpct.Loader;
 import com.threed.jpct.Logger;
 import com.threed.jpct.Matrix;
 import com.threed.jpct.Object3D;
-import com.threed.jpct.Primitives;
 import com.threed.jpct.RGBColor;
 import com.threed.jpct.SimpleVector;
 import com.threed.jpct.Texture;
 import com.threed.jpct.TextureManager;
 import com.threed.jpct.World;
-import com.threed.jpct.util.BitmapHelper;
 import com.threed.jpct.util.MemoryHelper;
 
 /**
@@ -66,6 +59,8 @@ public class Spoon3DActivity extends Activity {
 	private boolean gl2 = true;
 
 	private Light sun = null;
+
+	Object3D spoon = null;
 
 	protected void onCreate(Bundle savedInstanceState) {
 
@@ -192,58 +187,34 @@ public class Spoon3DActivity extends Activity {
 			}
 
 			if (master == null) {
-
 				world = new World();
 				world.setAmbientLight(20, 20, 20);
 
 				sun = new Light(world);
 				sun.setIntensity(250, 250, 250);
 
-				// Create a texture out of the icon...:-)
-				Texture texture = new Texture(BitmapHelper.rescale(BitmapHelper.convert(getResources().getDrawable(R.drawable.app_icon)), 64, 64));
-				TextureManager.getInstance().addTexture("texture", texture);
-				
-				// Add cylinder as spoon bottom
-				bottom = Primitives.getSphere(10);
-				bottom.calcTextureWrapSpherical();
-				bottom.setTexture("texture");
-				bottom.strip();
-//				bottom.build();
+				// TODO: Unsure of the textsure size to be used here.
+				// Use 256x256 for now.
+				// Create a texture of single color: red
+				Texture textureRed = new Texture(256, 256, RGBColor.RED);
+				TextureManager.getInstance().addTexture("textureRed", textureRed);
 
-				cube = Primitives.getDoubleCone(10);
-				cube.calcTextureWrapSpherical();
-				cube.setTexture("texture");
-				cube.strip();
-//				cube.build();
+				spoon = loadModel("Spoon.3DS", 1.0f);	// Load Spoon Model
+				spoon.calcTextureWrapSpherical();
+				spoon.setTexture("textureRed");
+				spoon.strip();
 				
-				// Load Spoon Model
-				Object3D spoon = loadModel("Spoon.3DS", 1.0f);
-				
-				
-				// Add bottom as child
-				cube.addChild(bottom);
-				
-				// Add objects to world
-//				world.addObject(cube);
-//				world.addObject(bottom);
 				world.addObject(spoon);
-				
-				
 				world.buildAllObjects();
 				
 				Camera cam = world.getCamera();
 				cam.moveCamera(Camera.CAMERA_MOVEOUT, 250);
-				cam.lookAt(cube.getTransformedCenter());
-
+				cam.lookAt(spoon.getTransformedCenter());
 				SimpleVector sv = new SimpleVector();
-				sv.set(cube.getTransformedCenter());
-				sv.y -= 100;
-				sv.z -= 100;
+				sv.set(spoon.getTransformedCenter());
+				sv.y -= 250;
+				sv.z -= 250;
 				sun.setPosition(sv);
-//				MemoryHelper.compact();
-				
-				// Set bottom position
-				bottom.translate(30,0,0);
 				
 				MemoryHelper.compact();
 
@@ -259,12 +230,12 @@ public class Spoon3DActivity extends Activity {
 
 		public void onDrawFrame(GL10 gl) {
 			if (touchTurn != 0) {
-				cube.rotateY(touchTurn);
+				spoon.rotateY(touchTurn);
 				touchTurn = 0;
 			}
 
 			if (touchTurnUp != 0) {
-				cube.rotateX(touchTurnUp);
+				spoon.rotateX(touchTurnUp);
 				touchTurnUp = 0;
 			}
 
