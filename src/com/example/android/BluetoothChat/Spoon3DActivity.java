@@ -53,8 +53,6 @@ public class Spoon3DActivity extends Activity {
 	private float xpos = -1;
 	private float ypos = -1;
 
-	private Object3D cube = null;
-	private Object3D bottom = null; // Add spoon bottom
 	private int fps = 0;
 	private boolean gl2 = true;
 

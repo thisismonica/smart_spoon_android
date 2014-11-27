@@ -24,6 +24,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         />
+    <!--
     <ListView android:id="@+id/in"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -31,10 +32,12 @@
         android:transcriptMode="alwaysScroll"
         android:layout_weight="1"
     />
-    <Button android:layout_width="wrap_content"
+     -->
+    <android.opengl.GLSurfaceView android:id="@+id/glview"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="open 3D"
-        android:onClick="openSpoon3D" />
+        android:layout_weight="1"
+    />
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"

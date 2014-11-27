@@ -16,10 +16,20 @@
 
 package com.example.android.BluetoothChat;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+
+import javax.microedition.khronos.egl.EGL10;
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.egl.EGLDisplay;
+import javax.microedition.khronos.opengles.GL10;
+
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
+import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -28,15 +38,29 @@ import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.inputmethod.EditorInfo;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.threed.jpct.Camera;
+import com.threed.jpct.FrameBuffer;
+import com.threed.jpct.Light;
+import com.threed.jpct.Loader;
+import com.threed.jpct.Logger;
+import com.threed.jpct.Matrix;
+import com.threed.jpct.Object3D;
+import com.threed.jpct.RGBColor;
+import com.threed.jpct.SimpleVector;
+import com.threed.jpct.Texture;
+import com.threed.jpct.TextureManager;
+import com.threed.jpct.World;
+import com.threed.jpct.util.MemoryHelper;
 
 /**
  * This is the main Activity that displays the current chat session.
@@ -63,7 +87,7 @@ public class BluetoothChat extends Activity {
 
     // Layout Views
     private TextView mTitle;
-    private ListView mConversationView;
+	// private ListView mConversationView;
     private EditText mOutEditText;
     private Button mSendButton;
 
@@ -78,6 +102,27 @@ public class BluetoothChat extends Activity {
     // Member object for the chat services
     private BluetoothChatService mChatService = null;
 
+	// Used to handle pause and resume...
+	private static BluetoothChat master = null;
+
+	private GLSurfaceView mGLView;
+	private MyRenderer renderer = null;
+	private FrameBuffer fb = null;
+	private World world = null;
+	private RGBColor back = new RGBColor(50, 50, 100);
+
+	private float touchTurn = 0;
+	private float touchTurnUp = 0;
+
+	private float xpos = -1;
+	private float ypos = -1;
+
+	private int fps = 0;
+	private boolean gl2 = true;
+
+	private Light sun = null;
+
+	Object3D spoon = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -102,7 +147,8 @@ public class BluetoothChat extends Activity {
 //        mTitle = (TextView) findViewById(R.id.title_right_text);
 
         // Get local Bluetooth adapter
-        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+		mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+		BluetoothAdapter.getDefaultAdapter().enable();
 
         // If the adapter is null, then Bluetooth is not supported
         if (mBluetoothAdapter == null) {
@@ -110,6 +156,35 @@ public class BluetoothChat extends Activity {
             finish();
             return;
         }
+
+		// Deal with GLSurfaceView
+		if (master != null) {
+			copy(master);
+		}
+
+		mGLView = (GLSurfaceView) findViewById(R.id.glview);
+		if (gl2) {
+			mGLView.setEGLContextClientVersion(2);
+		} else {
+			mGLView.setEGLConfigChooser(new GLSurfaceView.EGLConfigChooser() {
+				public EGLConfig chooseConfig(EGL10 egl, EGLDisplay display) {
+					// Ensure that we get a 16bit framebuffer. Otherwise, we'll
+					// fall back to Pixelflinger on some device (read: Samsung
+					// I7500). Current devices usually don't need this, but it
+					// doesn't hurt either.
+					int[] attributes = new int[] { EGL10.EGL_DEPTH_SIZE, 16,
+							EGL10.EGL_NONE };
+					EGLConfig[] configs = new EGLConfig[1];
+					int[] result = new int[1];
+					egl.eglChooseConfig(display, attributes, configs, 1, result);
+					return configs[0];
+				}
+			});
+
+		}
+
+		renderer = new MyRenderer();
+		mGLView.setRenderer(renderer);
     }
 
     @Override
@@ -120,8 +195,9 @@ public class BluetoothChat extends Activity {
         // If BT is not on, request that it be enabled.
         // setupChat() will then be called during onActivityResult
         if (!mBluetoothAdapter.isEnabled()) {
-            Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(enableIntent, REQUEST_ENABLE_BT);
+			// Intent enableIntent = new
+			// Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+			// startActivityForResult(enableIntent, REQUEST_ENABLE_BT);
         // Otherwise, setup the chat session
         } else {
             if (mChatService == null) setupChat();
@@ -143,6 +219,8 @@ public class BluetoothChat extends Activity {
               mChatService.start();
             }
         }
+
+		mGLView.onResume();
     }
 
     private void setupChat() {
@@ -150,8 +228,8 @@ public class BluetoothChat extends Activity {
 
         // Initialize the array adapter for the conversation thread
         mConversationArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
-        mConversationView = (ListView) findViewById(R.id.in);
-        mConversationView.setAdapter(mConversationArrayAdapter);
+		// mConversationView = (ListView) findViewById(R.id.in);
+		// mConversationView.setAdapter(mConversationArrayAdapter);
 
         // Initialize the compose field with a listener for the return key
         mOutEditText = (EditText) findViewById(R.id.edit_text_out);
@@ -179,6 +257,7 @@ public class BluetoothChat extends Activity {
     public synchronized void onPause() {
         super.onPause();
         if(D) Log.e(TAG, "- ON PAUSE -");
+		mGLView.onPause();
     }
 
     @Override
@@ -345,5 +424,175 @@ public class BluetoothChat extends Activity {
         }
         return false;
     }
+
+	private void copy(Object src) {
+		try {
+			Logger.log("Copying data from master Activity!");
+			Field[] fs = src.getClass().getDeclaredFields();
+			for (Field f : fs) {
+				f.setAccessible(true);
+				f.set(this, f.get(src));
+			}
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	public boolean onTouchEvent(MotionEvent me) {
+
+		if (me.getAction() == MotionEvent.ACTION_DOWN) {
+			xpos = me.getX();
+			ypos = me.getY();
+			return true;
+		}
+
+		if (me.getAction() == MotionEvent.ACTION_UP) {
+			xpos = -1;
+			ypos = -1;
+			touchTurn = 0;
+			touchTurnUp = 0;
+			return true;
+		}
+
+		if (me.getAction() == MotionEvent.ACTION_MOVE) {
+			float xd = me.getX() - xpos;
+			float yd = me.getY() - ypos;
+
+			xpos = me.getX();
+			ypos = me.getY();
+
+			touchTurn = xd / -100f;
+			touchTurnUp = yd / -100f;
+			return true;
+		}
+
+		try {
+			Thread.sleep(15);
+		} catch (Exception e) {
+			// No need for this...
+		}
+
+		return super.onTouchEvent(me);
+	}
+
+	protected boolean isFullscreenOpaque() {
+		return true;
+	}
+
+	class MyRenderer implements GLSurfaceView.Renderer {
+
+		private long time = System.currentTimeMillis();
+
+		public MyRenderer() {
+		}
+
+		public void onSurfaceChanged(GL10 gl, int w, int h) {
+			if (fb != null) {
+				fb.dispose();
+			}
+
+			if (gl2) {
+				fb = new FrameBuffer(w, h); // OpenGL ES 2.0 constructor
+			} else {
+				fb = new FrameBuffer(gl, w, h); // OpenGL ES 1.x constructor
+			}
+
+			if (master == null) {
+				world = new World();
+				world.setAmbientLight(20, 20, 20);
+
+				sun = new Light(world);
+				sun.setIntensity(250, 250, 250);
+
+				// TODO: Unsure of the textsure size to be used here.
+				// Use 256x256 for now.
+				// Create a texture of single color: red
+				Texture textureRed = new Texture(256, 256, RGBColor.RED);
+				TextureManager.getInstance().addTexture("textureRed",
+						textureRed);
+
+				spoon = loadModel("Spoon.3DS", 1.0f); // Load Spoon Model
+				spoon.calcTextureWrapSpherical();
+				spoon.setTexture("textureRed");
+				spoon.strip();
+
+				world.addObject(spoon);
+				world.buildAllObjects();
+
+				Camera cam = world.getCamera();
+				cam.moveCamera(Camera.CAMERA_MOVEOUT, 180);
+				cam.lookAt(spoon.getTransformedCenter());
+				SimpleVector sv = new SimpleVector();
+				sv.set(spoon.getTransformedCenter());
+				sv.y -= 250;
+				sv.z -= 250;
+				sun.setPosition(sv);
+
+				MemoryHelper.compact();
+
+				if (master == null) {
+					Logger.log("Saving master Activity!");
+					// master = Spoon3DActivity.this;
+					master = BluetoothChat.this;
+				}
+			}
+		}
+
+		public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+		}
+
+		public void onDrawFrame(GL10 gl) {
+			if (touchTurn != 0) {
+				spoon.rotateY(touchTurn);
+				touchTurn = 0;
+			}
+
+			if (touchTurnUp != 0) {
+				spoon.rotateX(touchTurnUp);
+				touchTurnUp = 0;
+			}
+
+			fb.clear(back);
+			world.renderScene(fb);
+			world.draw(fb);
+			fb.display();
+
+			if (System.currentTimeMillis() - time >= 1000) {
+				Logger.log(fps + "fps");
+				fps = 0;
+				time = System.currentTimeMillis();
+			}
+			fps++;
+		}
+
+		private Object3D loadModel(String filename, float scale) {
+			InputStream is;
+			Object3D[] model = null;
+
+			try {
+				is = getAssets().open(filename);
+				model = Loader.load3DS(is, 1.0f);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+
+			if (model == null) {
+				throw new RuntimeException("Not supposed to get here!");
+			}
+
+			Object3D o3d = new Object3D(0);
+			Object3D temp = null;
+			for (int i = 0; i < model.length; i++) {
+				temp = model[i];
+				temp.setCenter(SimpleVector.ORIGIN);
+				temp.rotateX((float) (-.5 * Math.PI));
+				temp.rotateMesh();
+				temp.setRotationMatrix(new Matrix());
+				o3d = Object3D.mergeObjects(o3d, temp);
+				o3d.build();
+			}
+			return o3d;
+		}
+	}
 
 }
