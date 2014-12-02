@@ -55,6 +55,7 @@ import com.threed.jpct.Loader;
 import com.threed.jpct.Logger;
 import com.threed.jpct.Matrix;
 import com.threed.jpct.Object3D;
+import com.threed.jpct.Primitives;
 import com.threed.jpct.RGBColor;
 import com.threed.jpct.SimpleVector;
 import com.threed.jpct.Texture;
@@ -122,9 +123,14 @@ public class BluetoothChat extends Activity {
 
 	private Light sun = null;
 
-	Object3D spoon = null;
+	private Object3D spoon = null;
+	private Object3D liquid0, liquid1, liquid2;
+	private enum SP_STATE {
+		EMPTY, LOW, HALF, FULL;
+	}
+	private SP_STATE state = SP_STATE.EMPTY;
 
-    @Override
+	@Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if(D) Log.e(TAG, "+++ ON CREATE +++");
@@ -141,10 +147,6 @@ public class BluetoothChat extends Activity {
 			Log.v("BUG!!", "there is no mTitle for use!!");
 
 		}
-		Log.v("BUG!!", "where is my log?");
-
-//        mTitle.setText(R.string.app_name);
-//        mTitle = (TextView) findViewById(R.id.title_right_text);
 
         // Get local Bluetooth adapter
 		mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -161,7 +163,6 @@ public class BluetoothChat extends Activity {
 		if (master != null) {
 			copy(master);
 		}
-
 		mGLView = (GLSurfaceView) findViewById(R.id.glview);
 		if (gl2) {
 			mGLView.setEGLContextClientVersion(2);
@@ -180,9 +181,7 @@ public class BluetoothChat extends Activity {
 					return configs[0];
 				}
 			});
-
 		}
-
 		renderer = new MyRenderer();
 		mGLView.setRenderer(renderer);
     }
@@ -504,18 +503,57 @@ public class BluetoothChat extends Activity {
 				sun = new Light(world);
 				sun.setIntensity(250, 250, 250);
 
-				// TODO: Unsure of the textsure size to be used here.
+				// TODO: Unsure of the texture size to be used here.
 				// Use 256x256 for now.
 				// Create a texture of single color: red
 				Texture textureRed = new Texture(256, 256, RGBColor.RED);
+				Texture textureWhite = new Texture(256, 256, RGBColor.WHITE);
 				TextureManager.getInstance().addTexture("textureRed",
 						textureRed);
+				TextureManager.getInstance().addTexture("textureWhite",
+						textureWhite);
 
-				spoon = loadModel("Spoon.3DS", 1.0f); // Load Spoon Model
+				// Load Spoon Model
+				spoon = loadModel("Spoon.3DS", 1.0f);
 				spoon.calcTextureWrapSpherical();
 				spoon.setTexture("textureRed");
 				spoon.strip();
 
+				// Rotate spoon to position able to show spoon content
+				spoon.rotateX(-0.6f);
+				spoon.rotateY(-0.1f);
+
+				// The Position of each level of liquid, (x,z) set at the center, y determines the height of level
+				SimpleVector pos0, pos1, pos2;
+				pos0 = spoon.getTransformedCenter();
+				pos0.x -= 35;
+				pos0.z -= 13;
+				pos0.y += 5;
+				pos1 = pos0;
+				pos1.y -= 4;
+				pos2 = pos1;
+				pos2.y -= 1;
+
+				// Create ellipsoid as content of liquid: liquid0, liquid1, liquid2 at each level
+				liquid2 = Primitives.getEllipsoid(20, 14, 0.1f);
+				liquid1 = Primitives.getEllipsoid(20, 11, 0.1f);
+				liquid0 = Primitives.getEllipsoid(20, 8, 0.1f);
+				liquid0.translate(pos0);
+				liquid1.translate(pos1);
+				liquid2.translate(pos2);
+				liquid2.rotateZ((float) (-0.08 * Math.PI));
+				liquid1.rotateZ((float) (-0.08 * Math.PI));
+				liquid0.rotateZ((float) (-0.08 * Math.PI));
+				liquid0.setTexture("textureWhite");
+				liquid1.setTexture("textureWhite");
+				liquid2.setTexture("textureWhite");
+				spoon.addChild(liquid0);
+				spoon.addChild(liquid1);
+				spoon.addChild(liquid2);
+
+				world.addObject(liquid0);
+				world.addObject(liquid1);
+				world.addObject(liquid2);
 				world.addObject(spoon);
 				world.buildAllObjects();
 
@@ -541,23 +579,64 @@ public class BluetoothChat extends Activity {
 		public void onSurfaceCreated(GL10 gl, EGLConfig config) {
 		}
 
+		private void setLiquidLevelEmpty() {
+			liquid0.setVisibility(false);
+			liquid1.setVisibility(false);
+			liquid2.setVisibility(false);
+		}
+
+		private void setLiquidLevelLow() {
+			liquid0.setVisibility(true);
+			liquid1.setVisibility(false);
+			liquid2.setVisibility(false);
+		}
+
+		private void setLiquidLevelHalf() {
+			liquid0.setVisibility(false);
+			liquid1.setVisibility(true);
+			liquid2.setVisibility(false);
+		}
+
+		private void setLiquidLevelFull() {
+			liquid0.setVisibility(false);
+			liquid1.setVisibility(false);
+			liquid2.setVisibility(true);
+		}
+
 		public void onDrawFrame(GL10 gl) {
 			if (touchTurn != 0) {
 				spoon.rotateY(touchTurn);
 				touchTurn = 0;
 			}
-
 			if (touchTurnUp != 0) {
 				spoon.rotateX(touchTurnUp);
 				touchTurnUp = 0;
 			}
-
 			fb.clear(back);
 			world.renderScene(fb);
 			world.draw(fb);
 			fb.display();
 
 			if (System.currentTimeMillis() - time >= 1000) {
+
+				// Change liquid state repeatedly every 1sec for testing
+				if (state == SP_STATE.EMPTY) {
+					setLiquidLevelEmpty();
+					state = SP_STATE.LOW;
+				}
+				else if (state == SP_STATE.LOW) {
+					setLiquidLevelLow();
+					state = SP_STATE.HALF;
+				}
+				else if (state == SP_STATE.HALF) {
+					setLiquidLevelHalf();
+					state = SP_STATE.FULL;
+				}
+				else{
+					setLiquidLevelFull();
+					state = SP_STATE.EMPTY;
+				}
+
 				Logger.log(fps + "fps");
 				fps = 0;
 				time = System.currentTimeMillis();
