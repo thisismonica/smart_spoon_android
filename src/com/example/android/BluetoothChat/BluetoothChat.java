@@ -124,12 +124,16 @@ public class BluetoothChat extends Activity {
 	private Light sun = null;
 
 	private Object3D spoon = null;
-	// private Object3D liquid0, liquid1, liquid2;
 	private Object3D liquid[];
-	private enum SP_STATE {
+	private enum VOLUME {
 		EMPTY, LOW, HALF, FULL;
 	}
-	private SP_STATE state = SP_STATE.EMPTY;
+	private VOLUME volume = VOLUME.EMPTY;
+	private enum USER_STATE {
+		INITIAL, HAS_VOLUME, ATTEMPT_EAT, END
+	}
+	private USER_STATE userState = USER_STATE.INITIAL;
+	private int time_in_air = 0;
 
 	@Override
     public void onCreate(Bundle savedInstanceState) {
@@ -321,6 +325,63 @@ public class BluetoothChat extends Activity {
         }
     };
 
+	// Read meassage from Arduino, update user state of spoon
+	private void updateUserState(String msg) {
+		String splits[] = msg.split("\\s");
+		String up = splits[0];
+		String bottom = splits[1];
+		double a[] = new double[3];
+		double thresh = 900.0f;
+		for (int i = 0; i < 3; i++) {
+			a[i] = Double.parseDouble(splits[2 + i]);
+		}
+
+		// Return to initial state if spoon is inside food
+		if (bottom == "0") {
+			volume = VOLUME.EMPTY;
+			userState = USER_STATE.INITIAL;
+		}
+
+		switch (userState) {
+		case INITIAL:
+			// TODO: Check if not tilt
+			if (a[2] < thresh) {
+				volume = VOLUME.FULL;
+			}
+ else if (a[1] < thresh) {
+				volume = VOLUME.HALF;
+			}
+ else if (a[0] < thresh) {
+				volume = VOLUME.LOW;
+			}
+			if (volume != VOLUME.EMPTY) {
+				userState = USER_STATE.HAS_VOLUME;
+				time_in_air = 0;
+			}
+			break;
+		case HAS_VOLUME:
+			time_in_air = time_in_air + 1;
+			if (a[0] > thresh) {
+				userState = USER_STATE.INITIAL;
+				volume = VOLUME.EMPTY;
+			}
+
+			// Assure the time in air is larger than 2 sec to avoid false
+			// positive on user attempt
+			if (up == "0" && time_in_air > 2) {
+				userState = USER_STATE.ATTEMPT_EAT;
+			}
+			break;
+		case ATTEMPT_EAT:
+			// TODO: Update calorie list when user finished eating
+			if (a[0] > thresh) {
+				// Consumed calorie according to volume
+				userState = USER_STATE.INITIAL;
+			}
+			break;
+		}
+	}
+
     // The Handler that gets information back from the BluetoothChatService
     private final Handler mHandler = new Handler() {
         @Override
@@ -358,6 +419,9 @@ public class BluetoothChat extends Activity {
                 
                 String readMessage = (String) msg.obj;
                 mConversationArrayAdapter.add(mConnectedDeviceName+":  " + readMessage);
+
+				// Parse message from Arduino
+				// updateUserState(readMessage);
                 break;
             case MESSAGE_DEVICE_NAME:
                 // save the connected device's name
@@ -573,7 +637,7 @@ public class BluetoothChat extends Activity {
 		public void onSurfaceCreated(GL10 gl, EGLConfig config) {
 		}
 
-		private void setLiquidLevel(SP_STATE s) {
+		public void setLiquidLevel(VOLUME s) {
 			for (int i = 0; i < 3; i++) {
 				liquid[i].setVisibility(false);
 			}
@@ -610,22 +674,22 @@ public class BluetoothChat extends Activity {
 
 			if (System.currentTimeMillis() - time >= 1000) {
 
-				// Change liquid state repeatedly every 1sec for testing
-				if (state == SP_STATE.EMPTY) {
-					setLiquidLevel(SP_STATE.EMPTY);
-					state = SP_STATE.LOW;
+				// Change liquid volume repeatedly every 1sec for testing
+				if (volume == VOLUME.EMPTY) {
+					setLiquidLevel(VOLUME.EMPTY);
+					volume = VOLUME.LOW;
 				}
-				else if (state == SP_STATE.LOW) {
-					setLiquidLevel(SP_STATE.LOW);
-					state = SP_STATE.HALF;
+ else if (volume == VOLUME.LOW) {
+					setLiquidLevel(VOLUME.LOW);
+					volume = VOLUME.HALF;
 				}
-				else if (state == SP_STATE.HALF) {
-					setLiquidLevel(SP_STATE.HALF);
-					state = SP_STATE.FULL;
+ else if (volume == VOLUME.HALF) {
+					setLiquidLevel(VOLUME.HALF);
+					volume = VOLUME.FULL;
 				}
 				else{
-					setLiquidLevel(SP_STATE.FULL);
-					state = SP_STATE.EMPTY;
+					setLiquidLevel(VOLUME.FULL);
+					volume = VOLUME.EMPTY;
 				}
 
 				Logger.log(fps + "fps");
