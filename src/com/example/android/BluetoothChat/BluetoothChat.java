@@ -77,6 +77,7 @@ public class BluetoothChat extends Activity {
     public static final int MESSAGE_WRITE = 3;
     public static final int MESSAGE_DEVICE_NAME = 4;
     public static final int MESSAGE_TOAST = 5;
+	public static final int ARDUINO_DATA_READ = 6;
 
     // Key names received from the BluetoothChatService Handler
     public static final String DEVICE_NAME = "device_name";
@@ -326,32 +327,26 @@ public class BluetoothChat extends Activity {
     };
 
 	// Read meassage from Arduino, update user state of spoon
-	private void updateUserState(String msg) {
-		String splits[] = msg.split("\\s");
-		String up = splits[0];
-		String bottom = splits[1];
-		double a[] = new double[3];
+	private void updateUserState(ArduinoData a) {
 		double thresh = 900.0f;
-		for (int i = 0; i < 3; i++) {
-			a[i] = Double.parseDouble(splits[2 + i]);
-		}
 
 		// Return to initial state if spoon is inside food
-		if (bottom == "0") {
+		if (a.bottom) {
 			volume = VOLUME.EMPTY;
 			userState = USER_STATE.INITIAL;
 		}
+		Log.i("updateUserState", "Arduino data up: " + a.up);
 
 		switch (userState) {
 		case INITIAL:
 			// TODO: Check if not tilt
-			if (a[2] < thresh) {
+			if (a.a0 < thresh) {
 				volume = VOLUME.FULL;
 			}
- else if (a[1] < thresh) {
+ else if (a.a1 < thresh) {
 				volume = VOLUME.HALF;
 			}
- else if (a[0] < thresh) {
+ else if (a.a2 < thresh) {
 				volume = VOLUME.LOW;
 			}
 			if (volume != VOLUME.EMPTY) {
@@ -361,20 +356,20 @@ public class BluetoothChat extends Activity {
 			break;
 		case HAS_VOLUME:
 			time_in_air = time_in_air + 1;
-			if (a[0] > thresh) {
+			if (a.a0 > thresh) {
 				userState = USER_STATE.INITIAL;
 				volume = VOLUME.EMPTY;
 			}
 
 			// Assure the time in air is larger than 2 sec to avoid false
 			// positive on user attempt
-			if (up == "0" && time_in_air > 2) {
+			if (a.up && time_in_air > 2) {
 				userState = USER_STATE.ATTEMPT_EAT;
 			}
 			break;
 		case ATTEMPT_EAT:
 			// TODO: Update calorie list when user finished eating
-			if (a[0] > thresh) {
+			if (a.a0 > thresh) {
 				// Consumed calorie according to volume
 				userState = USER_STATE.INITIAL;
 			}
@@ -418,11 +413,16 @@ public class BluetoothChat extends Activity {
                 android.util.Log.v("!! BUG !!", String.format("Handler::MESSAGE_READ: Number of bytes: %d", msg.arg1));
                 
                 String readMessage = (String) msg.obj;
-                mConversationArrayAdapter.add(mConnectedDeviceName+":  " + readMessage);
-
-				// Parse message from Arduino
-				// updateUserState(readMessage);
+				mConversationArrayAdapter.add(mConnectedDeviceName + ":  "
+						+ readMessage);
+				;
                 break;
+			case ARDUINO_DATA_READ:
+				// Parse message from Arduino
+				// updateUserState(readMessage)
+				ArduinoData arduinoData = (ArduinoData) msg.obj;
+				updateUserState(arduinoData);
+				break;
             case MESSAGE_DEVICE_NAME:
                 // save the connected device's name
                 mConnectedDeviceName = msg.getData().getString(DEVICE_NAME);
@@ -673,26 +673,26 @@ public class BluetoothChat extends Activity {
 			fb.display();
 
 			if (System.currentTimeMillis() - time >= 1000) {
-
+				setLiquidLevel(volume);
 				// Change liquid volume repeatedly every 1sec for testing
-				if (volume == VOLUME.EMPTY) {
-					setLiquidLevel(VOLUME.EMPTY);
-					volume = VOLUME.LOW;
-				}
- else if (volume == VOLUME.LOW) {
-					setLiquidLevel(VOLUME.LOW);
-					volume = VOLUME.HALF;
-				}
- else if (volume == VOLUME.HALF) {
-					setLiquidLevel(VOLUME.HALF);
-					volume = VOLUME.FULL;
-				}
-				else{
-					setLiquidLevel(VOLUME.FULL);
-					volume = VOLUME.EMPTY;
-				}
+				// if (volume == VOLUME.EMPTY) {
+				// setLiquidLevel(VOLUME.EMPTY);
+				// volume = VOLUME.LOW;
+				// }
+				// else if (volume == VOLUME.LOW) {
+				// setLiquidLevel(VOLUME.LOW);
+				// volume = VOLUME.HALF;
+				// }
+				// else if (volume == VOLUME.HALF) {
+				// setLiquidLevel(VOLUME.HALF);
+				// volume = VOLUME.FULL;
+				// }
+				// else{
+				// setLiquidLevel(VOLUME.FULL);
+				// volume = VOLUME.EMPTY;
+				// }
 
-				Logger.log(fps + "fps");
+				// Logger.log(fps + "fps");
 				fps = 0;
 				time = System.currentTimeMillis();
 			}
