@@ -31,6 +31,7 @@ import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
+import android.os.CountDownTimer;
 import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
@@ -44,7 +45,7 @@ import android.view.View.OnClickListener;
 import android.view.inputmethod.EditorInfo;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.EditText;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -77,7 +78,14 @@ public class BluetoothChat extends Activity {
     public static final int MESSAGE_WRITE = 3;
     public static final int MESSAGE_DEVICE_NAME = 4;
     public static final int MESSAGE_TOAST = 5;
-	public static final int ARDUINO_DATA_READ = 6;
+	public static final int MESSAGE_ARDUINO_DATA_READ = 6;
+	public static final int MESSAGE_RESET_POSITION = 7;
+
+	// Real spoon volumes in ml
+	public static final int EMPTY_VOLUME = 0;
+	public static final int LOW_VOLUME = 10;
+	public static final int HALF_VOLUME = 20;
+	public static final int FULL_VOLUME = 30;
 
     // Key names received from the BluetoothChatService Handler
     public static final String DEVICE_NAME = "device_name";
@@ -86,17 +94,20 @@ public class BluetoothChat extends Activity {
     // Intent request codes
     private static final int REQUEST_CONNECT_DEVICE = 1;
     private static final int REQUEST_ENABLE_BT = 2;
+	private static final String CALIBRATE_SIGNAL = "C";
 
     // Layout Views
     private TextView mTitle;
-	// private ListView mConversationView;
-    private EditText mOutEditText;
-    private Button mSendButton;
+	private ListView mCaloriesListView;
+	private Button mCalibrateButton;
+	// private EditText mOutEditText;
+	// private Button mSendButton;
 
     // Name of the connected device
     private String mConnectedDeviceName = null;
     // Array adapter for the conversation thread
-    private ArrayAdapter<String> mConversationArrayAdapter;
+	// private ArrayAdapter<String> mConversationArrayAdapter;
+	private ArrayAdapter<String> mCaloriesArrayAdapter;
     // String buffer for outgoing messages
     private StringBuffer mOutStringBuffer;
     // Local Bluetooth adapter
@@ -135,6 +146,12 @@ public class BluetoothChat extends Activity {
 	}
 	private USER_STATE userState = USER_STATE.INITIAL;
 	private int time_in_air = 0;
+	private float rotateX = 0;
+	private float rotateY = 0;
+	private float rotateZ = 0;
+	private float referenceX = 0;
+	private float referenceY = 0;
+	private float referenceZ = 0;
 
 	@Override
     public void onCreate(Bundle savedInstanceState) {
@@ -156,7 +173,7 @@ public class BluetoothChat extends Activity {
 
         // Get local Bluetooth adapter
 		mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-		BluetoothAdapter.getDefaultAdapter().enable();
+//		BluetoothAdapter.getDefaultAdapter().enable();
 
         // If the adapter is null, then Bluetooth is not supported
         if (mBluetoothAdapter == null) {
@@ -232,24 +249,42 @@ public class BluetoothChat extends Activity {
         Log.d(TAG, "setupChat()");
 
         // Initialize the array adapter for the conversation thread
-        mConversationArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
-		// mConversationView = (ListView) findViewById(R.id.in);
-		// mConversationView.setAdapter(mConversationArrayAdapter);
+		mCaloriesArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
+		mCaloriesListView = (ListView) findViewById(R.id.calories_list);
+		mCaloriesListView.setAdapter(mCaloriesArrayAdapter);
+		mCaloriesArrayAdapter.add(getResources().getString(
+				R.string.calories_list_title));
+		mCalibrateButton = (Button)findViewById(R.id.button_calibrate);
+		mCalibrateButton.setOnClickListener(new OnClickListener() {
+			public void onClick(View v){
+				if (mChatService.getState() != BluetoothChatService.STATE_CONNECTED) {
+					mTitle.setText(R.string.title_not_connected_calibrate);
+					return;
+				}
+				
+				// Set calibration message
+				mChatService.sendCalibrationMessage.set(true);
 
-        // Initialize the compose field with a listener for the return key
-        mOutEditText = (EditText) findViewById(R.id.edit_text_out);
-        mOutEditText.setOnEditorActionListener(mWriteListener);
+				// sendMessage(CALIBRATE_SIGNAL);
 
-        // Initialize the send button with a listener that for click events
-        mSendButton = (Button) findViewById(R.id.button_send);
-        mSendButton.setOnClickListener(new OnClickListener() {
-            public void onClick(View v) {
-                // Send a message using content of the edit text widget
-                TextView view = (TextView) findViewById(R.id.edit_text_out);
-                String message = view.getText().toString();
-                sendMessage(message);
-            }
-        });
+				mCalibrateButton.setEnabled(false);
+				// mChatService.setCalibrationDone(false);
+				// Wait until calibration finished;
+				new CountDownTimer(5000, 1000) {
+					public void onTick(long millisUntilFinished) {
+						mTitle.setText(getResources().getString(
+								R.string.calibrating)
+								+ millisUntilFinished / 1000);
+					}
+
+					public void onFinish() {
+						mTitle.setText(R.string.calibrate_done);
+					}
+				}.start();
+				mCalibrateButton.setEnabled(true);
+				// mChatService.setCalibrationDone(true);
+			}
+			});
 
         // Initialize the BluetoothChatService to perform bluetooth connections
         mChatService = new BluetoothChatService(this, mHandler);
@@ -308,7 +343,7 @@ public class BluetoothChat extends Activity {
 
             // Reset out string buffer to zero and clear the edit text field
             mOutStringBuffer.setLength(0);
-            mOutEditText.setText(mOutStringBuffer);
+			// mOutEditText.setText(mOutStringBuffer);
         }
     }
 
@@ -329,29 +364,32 @@ public class BluetoothChat extends Activity {
 	// Read meassage from Arduino, update user state of spoon
 	private void updateUserState(ArduinoData a) {
 		double thresh = 900.0f;
+		rotateX = a.x;
+		rotateY = a.y;
+		rotateZ = a.z;
 
 		// Return to initial state if spoon is inside food
 		if (a.bottom) {
 			volume = VOLUME.EMPTY;
 			userState = USER_STATE.INITIAL;
+			return;
 		}
-		Log.i("updateUserState", "Arduino data up: " + a.up);
+		Log.i("updateUserState", "Arduino data up is : " + a.up);
 
 		switch (userState) {
 		case INITIAL:
 			// TODO: Check if not tilt
-			if (a.a0 < thresh) {
+			if (a.a2 < thresh) {
 				volume = VOLUME.FULL;
-			}
- else if (a.a1 < thresh) {
+			} else if (a.a1 < thresh) {
 				volume = VOLUME.HALF;
-			}
- else if (a.a2 < thresh) {
+			} else if (a.a0 < thresh) {
 				volume = VOLUME.LOW;
 			}
 			if (volume != VOLUME.EMPTY) {
 				userState = USER_STATE.HAS_VOLUME;
 				time_in_air = 0;
+				mCaloriesArrayAdapter.add("Spoon has Volume");
 			}
 			break;
 		case HAS_VOLUME:
@@ -360,19 +398,25 @@ public class BluetoothChat extends Activity {
 				userState = USER_STATE.INITIAL;
 				volume = VOLUME.EMPTY;
 			}
-
 			// Assure the time in air is larger than 2 sec to avoid false
 			// positive on user attempt
 			if (a.up && time_in_air > 2) {
 				userState = USER_STATE.ATTEMPT_EAT;
+				mCaloriesArrayAdapter.add("Attempt to eat!");
+
 			}
 			break;
 		case ATTEMPT_EAT:
 			// TODO: Update calorie list when user finished eating
 			if (a.a0 > thresh) {
 				// Consumed calorie according to volume
+				mCaloriesArrayAdapter.add(R.string.food_type + "Milk"
+						+ R.string.volume + "4ml" + R.string.calories
+						+ "20 cal");
 				userState = USER_STATE.INITIAL;
 			}
+			break;
+		default:
 			break;
 		}
 	}
@@ -388,7 +432,7 @@ public class BluetoothChat extends Activity {
                 case BluetoothChatService.STATE_CONNECTED:
                     mTitle.setText(R.string.title_connected_to);
                     mTitle.append(mConnectedDeviceName);
-                    mConversationArrayAdapter.clear();
+					// mConversationArrayAdapter.clear();
                     break;
                 case BluetoothChatService.STATE_CONNECTING:
                     mTitle.setText(R.string.title_connecting);
@@ -403,7 +447,7 @@ public class BluetoothChat extends Activity {
                 byte[] writeBuf = (byte[]) msg.obj;
                 // construct a string from the buffer
                 String writeMessage = new String(writeBuf);
-                mConversationArrayAdapter.add("Me:  " + writeMessage);
+				// mConversationArrayAdapter.add("Me:  " + writeMessage);
                 break;
             case MESSAGE_READ:
 //                byte[] readBuf = (byte[]) msg.obj;
@@ -413,15 +457,25 @@ public class BluetoothChat extends Activity {
                 android.util.Log.v("!! BUG !!", String.format("Handler::MESSAGE_READ: Number of bytes: %d", msg.arg1));
                 
                 String readMessage = (String) msg.obj;
-				mConversationArrayAdapter.add(mConnectedDeviceName + ":  "
-						+ readMessage);
+				// mConversationArrayAdapter.add(mConnectedDeviceName + ":  "
+				// + readMessage);
 				;
                 break;
-			case ARDUINO_DATA_READ:
+			case MESSAGE_ARDUINO_DATA_READ:
 				// Parse message from Arduino
 				// updateUserState(readMessage)
 				ArduinoData arduinoData = (ArduinoData) msg.obj;
+				boolean isCalibrationFrame = msg.arg2 == 1 ? true : false;
+				
+				if (isCalibrationFrame) {
+					referenceX = arduinoData.x;
+					referenceY = arduinoData.y;
+					referenceZ = arduinoData.z;
+				}
+				
 				updateUserState(arduinoData);
+				mCaloriesArrayAdapter.add(
+						String.format("%f %f %f ", arduinoData.x, arduinoData.y, arduinoData.z));
 				break;
             case MESSAGE_DEVICE_NAME:
                 // save the connected device's name
@@ -433,9 +487,18 @@ public class BluetoothChat extends Activity {
                 Toast.makeText(getApplicationContext(), msg.getData().getString(TOAST),
                                Toast.LENGTH_SHORT).show();
                 break;
+			case MESSAGE_RESET_POSITION:
+				resetPosition();
+				break;
             }
         }
     };
+    
+    private void resetPosition(){
+    	if(spoon!=null){
+    		spoon.clearRotation();
+    	}
+    }
 
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         if(D) Log.d(TAG, "onActivityResult " + resultCode);
@@ -659,38 +722,33 @@ public class BluetoothChat extends Activity {
 		}
 
 		public void onDrawFrame(GL10 gl) {
-			if (touchTurn != 0) {
-				spoon.rotateY(touchTurn);
-				touchTurn = 0;
+			/*
+			 * if (touchTurn != 0) { spoon.rotateY(touchTurn); touchTurn = 0; }
+			 * if (touchTurnUp != 0) { spoon.rotateX(touchTurnUp); touchTurnUp =
+			 * 0; }
+			 */
+			if (rotateX!=0 | rotateY!=0 | rotateZ!=0)
+				spoon.clearRotation();
+			if (rotateX != 0) {
+				spoon.rotateX(rotateX - referenceX);
+				rotateX = 0;
 			}
-			if (touchTurnUp != 0) {
-				spoon.rotateX(touchTurnUp);
-				touchTurnUp = 0;
+			if (rotateY != 0) {
+				
+				spoon.rotateY(rotateY - referenceY);
+				rotateY = 0;
 			}
+			if (rotateZ != 0) {
+				spoon.rotateZ(rotateZ - referenceZ);
+				rotateZ = 0;
+			}
+			setLiquidLevel(volume);
 			fb.clear(back);
 			world.renderScene(fb);
 			world.draw(fb);
 			fb.display();
 
 			if (System.currentTimeMillis() - time >= 1000) {
-				setLiquidLevel(volume);
-				// Change liquid volume repeatedly every 1sec for testing
-				// if (volume == VOLUME.EMPTY) {
-				// setLiquidLevel(VOLUME.EMPTY);
-				// volume = VOLUME.LOW;
-				// }
-				// else if (volume == VOLUME.LOW) {
-				// setLiquidLevel(VOLUME.LOW);
-				// volume = VOLUME.HALF;
-				// }
-				// else if (volume == VOLUME.HALF) {
-				// setLiquidLevel(VOLUME.HALF);
-				// volume = VOLUME.FULL;
-				// }
-				// else{
-				// setLiquidLevel(VOLUME.FULL);
-				// volume = VOLUME.EMPTY;
-				// }
 
 				// Logger.log(fps + "fps");
 				fps = 0;
@@ -728,5 +786,4 @@ public class BluetoothChat extends Activity {
 			return o3d;
 		}
 	}
-
 }

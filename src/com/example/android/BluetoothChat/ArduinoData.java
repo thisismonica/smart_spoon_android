@@ -11,8 +11,8 @@ public class ArduinoData {
 		a0 = Integer.parseInt(splits[3]);
 		a1 = Integer.parseInt(splits[4]);
 		a2 = Integer.parseInt(splits[5]);
-		x = Float.parseFloat(splits[6]);
-		y = Float.parseFloat(splits[7]);
-		z = Float.parseFloat(splits[8]);
+		x = -Float.parseFloat(splits[6]);
+		z = Float.parseFloat(splits[7]);
+		y = Float.parseFloat(splits[8]);
 	}
 }

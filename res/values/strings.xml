@@ -19,12 +19,16 @@
 
     <!--  BluetoothChat -->
     <string name="send">Send</string>
+    <string name="calibrate">Calibrate</string>
     <string name="not_connected">You are not connected to a device</string>
     <string name="bt_not_enabled_leaving">Bluetooth was not enabled. Leaving Bluetooth Chat.</string>
     <string name="title_connecting">connecting...</string>
     <string name="title_connected_to">connected: </string>
     <string name="title_not_connected">not connected</string>
-
+    <string name="title_not_connected_calibrate">Bluetooth not connected for calibration</string>
+    <string name="calibrating">"Calibrating... seconds remaining: "</string>
+    <string name="calibrate_done">"Calibration done!"</string>
+  
     <!--  DeviceListActivity -->
     <string name="scanning">scanning for devices...</string>
     <string name="select_device">select a device to connect</string>
@@ -37,4 +41,8 @@
     <!-- Options Menu -->
     <string name="connect">Connect a device</string>
     <string name="discoverable">Make discoverable</string>
+    <string name="calories_list_title">Your Calories Intake from SmartSpoon: </string>
+    <string name="food_type">Food Type: </string>
+    <string name="volume">Volume: </string>
+    <string name="calories">Calories: </string>
 </resources>

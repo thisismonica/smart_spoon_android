@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -61,7 +62,7 @@ public class BluetoothChatService {
 	private AcceptThread mAcceptThread;
 	private ConnectThread mConnectThread;
 	private ConnectedThread mConnectedThread;
-	private int mState;
+	private volatile int mState;
 
 	// Constants that indicate the current connection state
 	public static final int STATE_NONE = 0; // we're doing nothing
@@ -72,6 +73,8 @@ public class BluetoothChatService {
 	public static final int STATE_CONNECTED = 3; // now connected to a remote
 													// device
 
+	public static final AtomicBoolean sendCalibrationMessage = new AtomicBoolean(false);
+	
 	/**
 	 * Constructor. Prepares a new BluetoothChat session.
 	 *
@@ -181,10 +184,13 @@ public class BluetoothChatService {
 			Log.d(TAG, "connected");
 
 		// Cancel the thread that completed the connection
+		// Should not kill mConnectThread since socket need to be open
+		/*
 		if (mConnectThread != null) {
 			mConnectThread.cancel();
 			mConnectThread = null;
 		}
+		*/
 
 		// Cancel any thread currently running a connection
 		if (mConnectedThread != null) {
@@ -474,11 +480,26 @@ public class BluetoothChatService {
 			ArduinoData arduinoData;
 			// long time = System.currentTimeMillis();
 			byte[] readCommand = new byte[] { 'G' };
+			byte[] calibrateCommand = new byte[] { 'C' };
 			boolean isFrameComplete = false;
+			boolean isCalibrationFrame = false;
 
 			// Keep listening to the InputStream while connected
 			while (true) {
 				try {
+					if (sendCalibrationMessage.compareAndSet(true, false)) {
+						mmOutStream.write(calibrateCommand);
+						mmOutStream.flush();
+						Thread.sleep(5000);
+
+						// Send message to UI Thread to reset the spoon's
+						// position
+						mHandler.obtainMessage(BluetoothChat.MESSAGE_RESET_POSITION).sendToTarget();
+						
+						// Set calibration frame
+						isCalibrationFrame = true;
+					}
+					
 					// if (System.currentTimeMillis() - time >= 100) {
 					// Send 'G' to get msg from arduino
 					mmOutStream.write(readCommand);
@@ -489,8 +510,6 @@ public class BluetoothChatService {
 					while (!isFrameComplete) {
 						// Read from the InputStream
 						bytes = mmInStream.read(buffer);
-
-
 						String dataReceived = new String(buffer, 0, bytes);
 						Log.d("!! BUG !!",
 								String.format("dataReceived: %s", dataReceived));
@@ -534,6 +553,11 @@ public class BluetoothChatService {
 						for (String item : frameData) {
 							Log.d("!! BUG !!", String.format("~~~ Data: %s", item));
 						}
+						// Send data back to UI activity
+						arduinoData = new ArduinoData(frameData);
+						mHandler.obtainMessage(
+								BluetoothChat.MESSAGE_ARDUINO_DATA_READ, bytes,
+								isCalibrationFrame ? 1 : 0, arduinoData).sendToTarget();
 
 						// Clean up stringBuilder object (update to stable state; discard irrelevant frame noise)
 						stringBuilder.delete(0, frameEndIdx + frameFooter.length() + 1);
@@ -542,27 +566,27 @@ public class BluetoothChatService {
 						isFrameComplete = true;
 					}
 
-
-//					Thread.sleep(200);
+					Thread.sleep(200);
 
 					// String readMessage = new String(buffer, 0, bytes);
 					// android.util.Log.d("!! BUG !!",
 					// String.format("run(): Number of bytes: %d", bytes));
 
 					// Send the obtained bytes to the UI Activity
-					// mHandler.obtainMessage(BluetoothChat.MESSAGE_READ, bytes,
+
+					// /mHandler.obtainMessage(BluetoothChat.MESSAGE_READ,
+					// bytes,
 					// -1, readMessage).sendToTarget();
 
 				} catch (IOException e) {
 					Log.e(TAG, "disconnected", e);
 					connectionLost();
 					break;
+				} catch (InterruptedException e) {
+					Log.e(TAG, "disconnected: Thread.sleep() interrupted.", e);
+					connectionLost();
+					break;
 				}
-//				catch (InterruptedException e) {
-//					Log.e(TAG, "disconnected: Thread.sleep() interrupted.", e);
-//					connectionLost();
-//					break;
-//				}
 			}
 		}
 

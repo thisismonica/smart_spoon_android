@@ -18,41 +18,34 @@
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:weightSum = "14"
     >
-    <TextView android:id="@+id/title_left_text"
+    <ListView android:id="@+id/calories_list"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        />
-    <!--
-    <ListView android:id="@+id/in"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:stackFromBottom="true"
+        android:layout_height="0dp"
         android:transcriptMode="alwaysScroll"
-        android:layout_weight="1"
-    />
-     -->
+        android:layout_weight="5"  
+    />    
     <android.opengl.GLSurfaceView android:id="@+id/glview"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
+        android:layout_height="0dp"
+        android:layout_weight="8"
     />
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         >
-        <EditText android:id="@+id/edit_text_out"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_gravity="bottom"
+        <TextView android:id="@+id/title_left_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="2"
         />
-        <Button android:id="@+id/button_send"
+        <Button android:id="@+id/button_calibrate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/send"
+            android:text="@string/calibrate"
         />
     </LinearLayout>
 </LinearLayout>
