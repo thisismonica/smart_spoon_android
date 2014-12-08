@@ -20,17 +20,35 @@
     android:layout_height="match_parent"
     android:weightSum = "14"
     >
-    <ListView android:id="@+id/calories_list"
+    <LinearLayout
+        android:orientation="horizontal"
         android:layout_width="match_parent"
         android:layout_height="0dp"
+        android:layout_weight="5">
+        
+    <ListView android:id="@+id/calories_list"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
         android:transcriptMode="alwaysScroll"
-        android:layout_weight="5"  
-    />    
+        android:layout_weight="3" 
+        android:background="@color/list_color" 
+    />
+
+    <TextView
+        android:id="@+id/calories_summary"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="2"
+        android:background="@color/summary_color" 
+        style="@style/SummaryFont"/>
+
+    </LinearLayout>   
     <android.opengl.GLSurfaceView android:id="@+id/glview"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="8"
-    />
+        android:layout_weight="8"/>
+        <!-- android:background="@color/gl_color"-->
+    
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
