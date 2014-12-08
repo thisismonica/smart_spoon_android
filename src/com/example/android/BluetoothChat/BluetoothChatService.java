@@ -482,7 +482,7 @@ public class BluetoothChatService {
 			byte[] readCommand = new byte[] { 'G' };
 			byte[] calibrateCommand = new byte[] { 'C' };
 			boolean isFrameComplete = false;
-			boolean isCalibrationFrame = false;
+			boolean isCalibrationFrame = true;
 
 			// Keep listening to the InputStream while connected
 			while (true) {
@@ -558,6 +558,7 @@ public class BluetoothChatService {
 						mHandler.obtainMessage(
 								BluetoothChat.MESSAGE_ARDUINO_DATA_READ, bytes,
 								isCalibrationFrame ? 1 : 0, arduinoData).sendToTarget();
+						isCalibrationFrame = false;
 
 						// Clean up stringBuilder object (update to stable state; discard irrelevant frame noise)
 						stringBuilder.delete(0, frameEndIdx + frameFooter.length() + 1);
