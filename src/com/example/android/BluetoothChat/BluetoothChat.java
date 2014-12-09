@@ -140,7 +140,7 @@ public class BluetoothChat extends Activity {
 		INITIAL, HAS_VOLUME, ATTEMPT_EAT, END
 	}
 	private USER_STATE userState = USER_STATE.INITIAL;
-	private int time_in_air = 0;
+	private int samples_before_check_mouth_pin = 0;
 	
 	// Rotation information read from IMU
 	private float rotateX = 0;
@@ -149,6 +149,9 @@ public class BluetoothChat extends Activity {
 	private float referenceX = 0;
 	private float referenceY = 0;
 	private float referenceZ = 0;
+	private static final float TILT_THRESHOLD = 0.3f;   // Threshold to check if it is not tilting
+	private static final int SAMPLES_BEFORE_CHECK_MOUTH_PIN = 5;  	// Number of samples needed before check mouth pin;
+																	// Because the mouth pin is corrupted just after spoon leaves bowl;
 	
 	// Food type information array
 	private String foodTypeFileName = "foodType.csv";
@@ -222,6 +225,9 @@ public class BluetoothChat extends Activity {
 			});
 		}
 		renderer = new MyRenderer();
+		if(renderer != null ){
+			renderer.initializeTexture();
+		}
 		mGLView.setRenderer(renderer);
     }
 
@@ -399,7 +405,7 @@ public class BluetoothChat extends Activity {
 	    		}
 	    	}
 	    	if(renderer!=null)
-	    		renderer.setLiquidTexture(currFoodType.getFoodColor());
+	    		renderer.setLiquidTexture(currFoodType.getFoodName());
     	}else{
     		Log.d("setFoodTypeByL0Voltage", "Lack food type information to set Food Type, set as default milk");
     		currFoodType = new FoodType();
@@ -409,6 +415,8 @@ public class BluetoothChat extends Activity {
 	// Read meassage from Arduino, update user state of spoon
 	private void updateUserState(ArduinoData a) {
 		double thresh = 900.0f;
+		int vol_after = 0;
+		VOLUME volume_after = VOLUME.EMPTY;
 		rotateX = a.x;
 		rotateY = a.y;
 		rotateZ = a.z;
@@ -419,22 +427,30 @@ public class BluetoothChat extends Activity {
 			userState = USER_STATE.INITIAL;
 			return;
 		}
-		Log.i("updateUserState", "Arduino data up is : " + a.mouth);
+//		mCaloriesArrayAdapter.add("Get data: "+a.mouth+" "+a.bottom+" "+a.a0+" "+a.a1+" "+a.a2);
 
 		switch (userState) {
 		case INITIAL:
 			// TODO: Check if not tilt, Read AD value
-			if(rotateX==referenceX && rotateZ==referenceZ){
-				if (a.a2 < thresh) {
+			if(Math.abs(rotateX-referenceX)< TILT_THRESHOLD && Math.abs(rotateZ-referenceZ)<TILT_THRESHOLD ){
+				
+				// Read a.a2 the highest AD value
+				// AD should be lower than threshold if connected by liquid
+				if (a.a2 < thresh && a.a1 < thresh && a.a0 < thresh) {
 					volume = VOLUME.FULL;
-				} else if (a.a1 < thresh) {
+				} else if (a.a1 < thresh && a.a0 <thresh) {
 					volume = VOLUME.HALF;
 				} else if (a.a0 < thresh) {
 					volume = VOLUME.LOW;
 				}
+				
 				if (volume != VOLUME.EMPTY) {
 					userState = USER_STATE.HAS_VOLUME;
-					time_in_air = 0;
+					volume_after = volume;
+					
+					// Initialize time_in_air
+					// Give some time to hold the food before check user attempt
+					samples_before_check_mouth_pin = 0;
 					mCaloriesArrayAdapter.add("Spoon has Volume");
 					// Get food type
 					setFoodTypeByL0Voltage(a.a0);
@@ -442,22 +458,33 @@ public class BluetoothChat extends Activity {
 			}
 			break;
 		case HAS_VOLUME:
-			time_in_air = time_in_air + 1;
-			if (a.a0 > thresh) {
-				userState = USER_STATE.INITIAL;
-				volume = VOLUME.EMPTY;
+			samples_before_check_mouth_pin = samples_before_check_mouth_pin + 1;
+			if(Math.abs(rotateX-referenceX)< TILT_THRESHOLD && Math.abs(rotateZ-referenceZ)<TILT_THRESHOLD ){
+				if (a.a0 > thresh) {
+					userState = USER_STATE.INITIAL;
+					volume = VOLUME.EMPTY;
+				}
 			}
-			// Assure the time in air is larger than 2 sec to avoid false
+			// Assure the time in air is larger than 2 * 200 ms to avoid false
 			// positive on user attempt
-			if (a.mouth && time_in_air > 2) {
+			if (a.mouth && samples_before_check_mouth_pin > SAMPLES_BEFORE_CHECK_MOUTH_PIN) {
 				userState = USER_STATE.ATTEMPT_EAT;
 				mCaloriesArrayAdapter.add("Attempt to eat!");
-
 			}
 			break;
 		case ATTEMPT_EAT:
-			// TODO: Update calorie list when user finished eating
-			if (a.a0 > thresh) {
+			// Update calorie list when user finished eating
+			// Check volume after eating when not tilt
+			if(Math.abs(rotateX-referenceX)< TILT_THRESHOLD && Math.abs(rotateZ-referenceZ)<TILT_THRESHOLD ){
+				if (a.a2 < thresh && a.a1 < thresh && a.a0 < thresh) {
+					volume_after = VOLUME.FULL;
+				} else if (a.a1 < thresh && a.a0 <thresh) {
+					volume_after = VOLUME.HALF;
+				} else if (a.a0 < thresh) {
+					volume_after = VOLUME.LOW;
+				}
+			}
+			if (volume_after!=volume) {
 				// Consumed calorie according to volume
 				if(currFoodType!=null){
 					int vol = 0;
@@ -468,18 +495,30 @@ public class BluetoothChat extends Activity {
 								break;
 					case FULL: vol = FULL_VOLUME;
 								break;
+					default: vol = 0;
+						break;
+					}
+					switch(volume_after){
+					case LOW: vol -= LOW_VOLUME;
+								break;
+					case HALF: vol -= HALF_VOLUME;
+								break;
+					case FULL: vol -= FULL_VOLUME;
+								break;
+					default:
+						break;
 					}
 					int cal = currFoodType.getCalorie() * vol;
-					mCaloriesArrayAdapter.add(R.string.food_type + currFoodType.getFoodName()
-							+ R.string.volume + vol + R.string.calories
+					mCaloriesArrayAdapter.add(getString(R.string.food_type) + " "+currFoodType.getFoodName()
+							+ " "+getString(R.string.volume) + vol + getString(R.string.calories)
 							+ cal + "cals");
 					totalCalories += cal;
 					updateCaloriesSummary();
 				}else{
 					Log.d("updateUserState","Lack food type information to update calorie list");
 				}
-					
 				userState = USER_STATE.INITIAL;
+				volume = volume_after;
 			}
 			break;
 		default:
@@ -525,11 +564,9 @@ public class BluetoothChat extends Activity {
             case MESSAGE_READ:
 //                byte[] readBuf = (byte[]) msg.obj;
                 // construct a string from the valid bytes in the buffer
-//                String readMessage = new String(readBuf, 0, msg.arg1);
-                
-                android.util.Log.v("!! BUG !!", String.format("Handler::MESSAGE_READ: Number of bytes: %d", msg.arg1));
-                
-                String readMessage = (String) msg.obj;
+//                String readMessage = new String(readBuf, 0, msg.arg1);  
+//                android.util.Log.v("!! BUG !!", String.format("Handler::MESSAGE_READ: Number of bytes: %d", msg.arg1));
+//                String readMessage = (String) msg.obj;
 				// mConversationArrayAdapter.add(mConnectedDeviceName + ":  "
 				// + readMessage);
                 break;
@@ -545,8 +582,8 @@ public class BluetoothChat extends Activity {
 					referenceZ = arduinoData.z;
 				}
 				updateUserState(arduinoData);
-				mCaloriesArrayAdapter.add(
-						String.format("%f %f %f ", arduinoData.x, arduinoData.y, arduinoData.z));
+//				mCaloriesArrayAdapter.add(
+//						String.format("%f %f %f ", arduinoData.x, arduinoData.y, arduinoData.z));
 				break;
             case MESSAGE_DEVICE_NAME:
                 // save the connected device's name
@@ -831,11 +868,22 @@ public class BluetoothChat extends Activity {
 		public void onSurfaceCreated(GL10 gl, EGLConfig config) {
 		}
 		
-		public void setLiquidTexture(RGBColor c){
-			Texture texture = new Texture(256, 256, c);
-			TextureManager.getInstance().addTexture("texture",texture);
+		public void setLiquidTexture(String textureName){
 			for (int i = 0; i < 3; i++) {
-				liquid[i].setTexture("texture");
+				try{
+					liquid[i].setTexture(textureName);
+				}catch(RuntimeException e){
+					e.printStackTrace();
+					liquid[i].setTexture("textureWhite");
+					Log.d("Renderer.setLiquidTexture()","Unknown texture");
+				}
+			}
+		}
+		
+		public void initializeTexture(){
+			for(FoodType f:foodTypeArray){
+				Texture texture = new Texture(256, 256, f.getFoodColor());
+				TextureManager.getInstance().addTexture(f.getFoodName(),texture);
 			}
 		}
 		

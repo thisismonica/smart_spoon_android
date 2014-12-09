@@ -14,9 +14,9 @@ public class ArduinoData {
 	public ArduinoData(String[] splits) {
 		try{
 			// Digital pin value to check if user touch spoon for eating
-			mouth = (splits[1] == "0");
+			mouth = (Integer.parseInt(splits[1]) == 0);
 			// Digital pin value to check if spoon inside food
-			bottom = (splits[2] == "0");
+			bottom = (Integer.parseInt(splits[2]) == 0);
 			
 			// 3 Analog values for volume measurement, from Arduino Pro Mini 10bit ADC(range: 0-1023) 
 			a0 = Integer.parseInt(splits[3]);
