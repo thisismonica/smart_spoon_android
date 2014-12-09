@@ -419,7 +419,7 @@ public class BluetoothChatService {
 			synchronized (BluetoothChatService.this) {
 				mConnectThread = null;
 			}
-
+			
 			// Start the connected thread
 			connected(mmSocket, mmDevice);
 		}
@@ -483,6 +483,14 @@ public class BluetoothChatService {
 			byte[] calibrateCommand = new byte[] { 'C' };
 			boolean isFrameComplete = false;
 			boolean isCalibrationFrame = true;
+			
+			// Wait for Smart Spoon side establish connection
+			try {
+				Thread.sleep(5000);
+			} catch (InterruptedException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 
 			// Keep listening to the InputStream while connected
 			while (true) {

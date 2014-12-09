@@ -166,6 +166,10 @@ public class BluetoothChat extends Activity {
 	// Calories summary
 	private int totalCalories = 0;
 	public static final String MY_PREFS_NAME = "SmartSpoonPrefsFile";
+	
+	// Connection to SmartSpoon
+	private static final String SMARTSPOON_MAC = "00:06:66:04:AF:90";
+	private boolean TRY_CONNECT_SMARTSPOON = false;
 
 	@Override
     public void onCreate(Bundle savedInstanceState) {
@@ -540,7 +544,6 @@ public class BluetoothChat extends Activity {
 					referenceY = arduinoData.y;
 					referenceZ = arduinoData.z;
 				}
-				
 				updateUserState(arduinoData);
 				mCaloriesArrayAdapter.add(
 						String.format("%f %f %f ", arduinoData.x, arduinoData.y, arduinoData.z));
@@ -554,6 +557,9 @@ public class BluetoothChat extends Activity {
             case MESSAGE_TOAST:
                 Toast.makeText(getApplicationContext(), msg.getData().getString(TOAST),
                                Toast.LENGTH_SHORT).show();
+                if(TRY_CONNECT_SMARTSPOON){
+                	connectSmartSpoon();
+                }
                 break;
 			case MESSAGE_RESET_POSITION:
 				resetSpoonPosition();
@@ -580,6 +586,7 @@ public class BluetoothChat extends Activity {
                 // Get the device MAC address
                 String address = data.getExtras()
                                      .getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
+                Log.d("OnActivityResult","get address: "+address);
                 // Get the BLuetoothDevice object
                 BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
                 // Attempt to connect to the device
@@ -607,9 +614,23 @@ public class BluetoothChat extends Activity {
         return true;
     }
 
+    /**
+     * Connect to SmartSpoon Mac Address
+     */
+    private void connectSmartSpoon(){
+        BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(SMARTSPOON_MAC);
+        // Attempt to connect to the device
+        mChatService.connect(device);
+    }
+    
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
+        case R.id.connect_smartspoon:
+        	// Connect to SmartSpoon Mac, reconnect if failed
+            connectSmartSpoon();
+            TRY_CONNECT_SMARTSPOON = true;
+            return true;
         case R.id.scan:
             // Launch the DeviceListActivity to see devices and do scan
             Intent serverIntent = new Intent(this, DeviceListActivity.class);

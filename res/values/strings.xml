@@ -40,6 +40,7 @@
 
     <!-- Options Menu -->
     <string name="connect">Connect a device</string>
+    <string name="connect_smartspoon">Connect SmartSpoon</string>
     <string name="discoverable">Make discoverable</string>
     <string name="calories_list_title">Your Calories Intake from SmartSpoon: </string>
     <string name="food_type">Food Type: </string>
