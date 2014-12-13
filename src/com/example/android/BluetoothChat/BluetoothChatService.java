@@ -519,7 +519,7 @@ public class BluetoothChatService {
 						// Read from the InputStream
 						bytes = mmInStream.read(buffer);
 						String dataReceived = new String(buffer, 0, bytes);
-						Log.d("!! BUG !!",
+						Log.d("=DEBUG=",
 								String.format("dataReceived: %s", dataReceived));
 
 						// Convert to char []

@@ -75,7 +75,7 @@ import com.threed.jpct.util.MemoryHelper;
 public class BluetoothChat extends Activity {
     // Debugging
     private static final String TAG = "BluetoothChat";
-    private static final boolean D = true;
+    private static final boolean D = Constant.DEBUG_MODE;
 
     // Message types sent from the BluetoothChatService Handler
     public static final int MESSAGE_STATE_CHANGE = 1;
@@ -98,13 +98,10 @@ public class BluetoothChat extends Activity {
     private TextView mTitle;
 	private ListView mCaloriesListView;
 	private Button mCalibrateButton;
-	// private EditText mOutEditText;
-	// private Button mSendButton;
 
     // Name of the connected device
     private String mConnectedDeviceName = null;
     // Array adapter for the conversation thread
-	// private ArrayAdapter<String> mConversationArrayAdapter;
 	private ArrayAdapter<String> mCaloriesArrayAdapter;
     // String buffer for outgoing messages
     private StringBuffer mOutStringBuffer;
@@ -121,15 +118,11 @@ public class BluetoothChat extends Activity {
 	private FrameBuffer fb = null;
 	private World world = null;
 	private RGBColor back = new RGBColor(50, 50, 100);
-	private float touchTurn = 0;
-	private float touchTurnUp = 0;
-	private float xpos = -1;
-	private float ypos = -1;
-	private int fps = 0;
 	private boolean gl2 = true;
 	private Light sun = null;
 	private Object3D spoon = null;
 	private Object3D liquid[];
+	private int fps = 0;
 	
 	// Volume and user state information
 	private enum VOLUME {
@@ -137,10 +130,10 @@ public class BluetoothChat extends Activity {
 	}
 	private VOLUME volume = VOLUME.EMPTY;
 	private enum USER_STATE {
-		INITIAL, HAS_VOLUME, ATTEMPT_EAT, END
+		INITIAL, HAS_VOLUME, ATTEMPT_EAT, EATING
 	}
 	private USER_STATE userState = USER_STATE.INITIAL;
-	private int samples_before_check_mouth_pin = 0;
+	private static final int AD_CHANGE_THRESHOLD = Constant.AD_CHANGE_THRESHOLD;
 	
 	// Rotation information read from IMU
 	private float rotateX = 0;
@@ -149,29 +142,30 @@ public class BluetoothChat extends Activity {
 	private float referenceX = 0;
 	private float referenceY = 0;
 	private float referenceZ = 0;
-	private static final float TILT_THRESHOLD = 0.3f;   // Threshold to check if it is not tilting
-	private static final int SAMPLES_BEFORE_CHECK_MOUTH_PIN = 5;  	// Number of samples needed before check mouth pin;
-																	// Because the mouth pin is corrupted just after spoon leaves bowl;
+	private static final float TILT_THRESHOLD = Constant.TILT_THRESHOLD;   // Threshold to check if it is not tilting
+	private static final int SAMPLES_BEFORE_CHECK_MOUTH_PIN = Constant.SAMPLES_BEFORE_CHECK_MOUTH_PIN;  	// Number of samples needed before check mouth pin; Used because the mouth pin is corrupted just after spoon leaves bowl
+	private static final float EAT_TILT_THRESHOLD = Constant.EAT_TILT_THRESHOLD; //Tilt threshold to check if user attempt to eat
 	
 	// Food type information array
 	private String foodTypeFileName = "foodType.csv";
 	private FoodType[] foodTypeArray;
 	private FoodType currFoodType;
-	private static final int maxADCValue = 1023;
+	private static final int maxADCValue = Constant.maxADCValue;
+	private int samples_count = 0;
 	
 	// Real spoon volumes in ml
 	// TODO: Match it in real cases, Try make it configurable
-	public static final int EMPTY_VOLUME = 0;
-	public static final int LOW_VOLUME = 10;
-	public static final int HALF_VOLUME = 20;
-	public static final int FULL_VOLUME = 30;
+	public static final int EMPTY_VOLUME = Constant.EMPTY_VOLUME;
+	public static final int LOW_VOLUME = Constant.LOW_VOLUME;
+	public static final int HALF_VOLUME = Constant.HALF_VOLUME;
+	public static final int FULL_VOLUME = Constant.FULL_VOLUME;
 	
 	// Calories summary
 	private int totalCalories = 0;
-	public static final String MY_PREFS_NAME = "SmartSpoonPrefsFile";
+	public static final String MY_PREFS_NAME = Constant.MY_PREFS_NAME;
 	
 	// Connection to SmartSpoon
-	private static final String SMARTSPOON_MAC = "00:06:66:04:AF:90";
+	private static final String SMARTSPOON_MAC = Constant.SMARTSPOON_MAC;
 	private boolean TRY_CONNECT_SMARTSPOON = false;
 
 	@Override
@@ -225,6 +219,8 @@ public class BluetoothChat extends Activity {
 			});
 		}
 		renderer = new MyRenderer();
+		
+		// Initialize texture with different color for each food type
 		if(renderer != null ){
 			renderer.initializeTexture();
 		}
@@ -414,8 +410,6 @@ public class BluetoothChat extends Activity {
 
 	// Read meassage from Arduino, update user state of spoon
 	private void updateUserState(ArduinoData a) {
-		double thresh = 900.0f;
-		int vol_after = 0;
 		VOLUME volume_after = VOLUME.EMPTY;
 		rotateX = a.x;
 		rotateY = a.y;
@@ -427,98 +421,134 @@ public class BluetoothChat extends Activity {
 			userState = USER_STATE.INITIAL;
 			return;
 		}
-//		mCaloriesArrayAdapter.add("Get data: "+a.mouth+" "+a.bottom+" "+a.a0+" "+a.a1+" "+a.a2);
 
+		// Debug mode:
+		if(D){
+			a.a0 = 600;
+			a.a1 = 700;
+			a.mouth = true;
+			//mCaloriesArrayAdapter.add("Get data: "+a.mouth+" "+a.bottom+" "+a.a0+" "+a.a1+" "+a.a2);
+			//mCaloriesArrayAdapter.add(String.format(" X=%f, Z=%f",Math.abs(rotateX-referenceX), Math.abs(rotateZ-referenceZ)) );
+		}
+		
 		switch (userState) {
-		case INITIAL:
-			// TODO: Check if not tilt, Read AD value
+		case INITIAL:		
+			if(D){
+				mCaloriesArrayAdapter.add("Initial State");
+			}
+			
+			// Read AD value if not tilt
 			if(Math.abs(rotateX-referenceX)< TILT_THRESHOLD && Math.abs(rotateZ-referenceZ)<TILT_THRESHOLD ){
-				
 				// Read a.a2 the highest AD value
 				// AD should be lower than threshold if connected by liquid
-				if (a.a2 < thresh && a.a1 < thresh && a.a0 < thresh) {
+				if (a.a2 < AD_CHANGE_THRESHOLD && a.a1 < AD_CHANGE_THRESHOLD && a.a0 < AD_CHANGE_THRESHOLD) {
 					volume = VOLUME.FULL;
-				} else if (a.a1 < thresh && a.a0 <thresh) {
+				} else if (a.a1 < AD_CHANGE_THRESHOLD && a.a0 <AD_CHANGE_THRESHOLD) {
 					volume = VOLUME.HALF;
-				} else if (a.a0 < thresh) {
+				} else if (a.a0 < AD_CHANGE_THRESHOLD) {
 					volume = VOLUME.LOW;
 				}
 				
+				// Change state if not empty
 				if (volume != VOLUME.EMPTY) {
 					userState = USER_STATE.HAS_VOLUME;
 					volume_after = volume;
 					
-					// Initialize time_in_air
-					// Give some time to hold the food before check user attempt
-					samples_before_check_mouth_pin = 0;
+					// Reserve some time to hold the food before check user attempt
+					samples_count = 0;
 					mCaloriesArrayAdapter.add("Spoon has Volume");
-					// Get food type
+					
+					// Infer food type by resistance
 					setFoodTypeByL0Voltage(a.a0);
 				}
 			}
 			break;
 		case HAS_VOLUME:
-			samples_before_check_mouth_pin = samples_before_check_mouth_pin + 1;
+			samples_count = samples_count + 1;
+			
+			// Resume user state if spoon empty
 			if(Math.abs(rotateX-referenceX)< TILT_THRESHOLD && Math.abs(rotateZ-referenceZ)<TILT_THRESHOLD ){
-				if (a.a0 > thresh) {
+				if (a.a0 > AD_CHANGE_THRESHOLD) {
 					userState = USER_STATE.INITIAL;
 					volume = VOLUME.EMPTY;
 				}
 			}
-			// Assure the time in air is larger than 2 * 200 ms to avoid false
-			// positive on user attempt
-			if (a.mouth && samples_before_check_mouth_pin > SAMPLES_BEFORE_CHECK_MOUTH_PIN) {
+			
+			// Assure the samples before check mouth pin is larger than threshold  to avoid false positive on user attempt
+			if (a.mouth && samples_count > SAMPLES_BEFORE_CHECK_MOUTH_PIN) {
 				userState = USER_STATE.ATTEMPT_EAT;
 				mCaloriesArrayAdapter.add("Attempt to eat!");
 			}
 			break;
 		case ATTEMPT_EAT:
-			// Update calorie list when user finished eating
-			// Check volume after eating when not tilt
+			
+			// Resume user state if spoon empty
 			if(Math.abs(rotateX-referenceX)< TILT_THRESHOLD && Math.abs(rotateZ-referenceZ)<TILT_THRESHOLD ){
-				if (a.a2 < thresh && a.a1 < thresh && a.a0 < thresh) {
-					volume_after = VOLUME.FULL;
-				} else if (a.a1 < thresh && a.a0 <thresh) {
-					volume_after = VOLUME.HALF;
-				} else if (a.a0 < thresh) {
-					volume_after = VOLUME.LOW;
+				if (a.a0 > AD_CHANGE_THRESHOLD) {
+					userState = USER_STATE.INITIAL;
+					volume = VOLUME.EMPTY;
 				}
 			}
-			if (volume_after!=volume) {
-				// Consumed calorie according to volume
-				if(currFoodType!=null){
-					int vol = 0;
-					switch(volume){
-					case LOW: vol = LOW_VOLUME;
-								break;
-					case HALF: vol = HALF_VOLUME;
-								break;
-					case FULL: vol = FULL_VOLUME;
-								break;
-					default: vol = 0;
-						break;
-					}
-					switch(volume_after){
-					case LOW: vol -= LOW_VOLUME;
-								break;
-					case HALF: vol -= HALF_VOLUME;
-								break;
-					case FULL: vol -= FULL_VOLUME;
-								break;
-					default:
-						break;
-					}
-					int cal = currFoodType.getCalorie() * vol;
-					mCaloriesArrayAdapter.add(getString(R.string.food_type) + " "+currFoodType.getFoodName()
-							+ " "+getString(R.string.volume) + vol + getString(R.string.calories)
-							+ cal + "cals");
-					totalCalories += cal;
-					updateCaloriesSummary();
-				}else{
-					Log.d("updateUserState","Lack food type information to update calorie list");
+			
+			// Change state to eating if user tilts spoon to eat
+			if(Math.abs(rotateX-referenceX)>EAT_TILT_THRESHOLD || Math.abs(rotateZ-referenceZ)>EAT_TILT_THRESHOLD){
+				userState = USER_STATE.EATING;
+				mCaloriesArrayAdapter.add("Eating...");
+			}
+		case EATING:
+			
+			// Check volume after eating when not tilt
+			if(Math.abs(rotateX-referenceX)< TILT_THRESHOLD && Math.abs(rotateZ-referenceZ)<TILT_THRESHOLD ){
+				if (a.a2 < AD_CHANGE_THRESHOLD && a.a1 < AD_CHANGE_THRESHOLD && a.a0 < AD_CHANGE_THRESHOLD) {
+					volume_after = VOLUME.FULL;
+				} else if (a.a1 < AD_CHANGE_THRESHOLD && a.a0 <AD_CHANGE_THRESHOLD) {
+					volume_after = VOLUME.HALF;
+				} else if (a.a0 < AD_CHANGE_THRESHOLD) {
+					volume_after = VOLUME.LOW;
 				}
-				userState = USER_STATE.INITIAL;
-				volume = volume_after;
+				
+				if (volume_after!=volume) {
+					// Consumed calorie according to volume
+					if(currFoodType!=null){
+						int vol = 0;
+		
+						// TODO: make it more elegant please...
+						switch(volume){
+						case LOW: vol = LOW_VOLUME;
+									break;
+						case HALF: vol = HALF_VOLUME;
+									break;
+						case FULL: vol = FULL_VOLUME;
+									break;
+						default: vol = 0;
+							break;
+						}
+						switch(volume_after){
+						case LOW: vol -= LOW_VOLUME;
+									break;
+						case HALF: vol -= HALF_VOLUME;
+									break;
+						case FULL: vol -= FULL_VOLUME;
+									break;
+						default: vol = 0;
+							break;
+						}
+						
+						// Update calorie list & summary when user finished eating
+						int cal = currFoodType.getCalorie() * vol;
+						mCaloriesArrayAdapter.add(getString(R.string.food_type) + " "+currFoodType.getFoodName()
+								+ " "+getString(R.string.volume) + vol + getString(R.string.calories)
+								+ cal + "cals");
+						totalCalories += cal;
+						updateCaloriesSummary();
+					}else{
+						Log.d("updateUserState","Lack food type information to update calorie list");
+					}
+					
+					// Change state back to initial after eating
+					userState = USER_STATE.INITIAL;
+					volume = volume_after;
+				}
 			}
 			break;
 		default:
